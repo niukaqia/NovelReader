@@ -1,0 +1,36 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "module description"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "description"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "label"
+    },
+    {
+      "name": "permission_read_media",
+      "value": "读取本地小说文件"
+    },
+    {
+      "name": "permission_write_media",
+      "value": "保存阅读进度和书签"
+    },
+    {
+      "name": "permission_file_access",
+      "value": "访问文件管理器"
+    },
+    {
+      "name": "permission_read_documents",
+      "value": "读取文档文件"
+    },
+    {
+      "name": "permission_write_documents",
+      "value": "写入文档文件"
+    }
+  ]
+}
