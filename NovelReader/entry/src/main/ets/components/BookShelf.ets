@@ -1,21 +1,50 @@
-import { Book, BookCategory, BOOK_CATEGORIES } from '../model/Book';
+/**
+ * 书架组件
+ * 负责展示书籍列表、分类筛选、书籍扫描和阅读进度显示
+ */
+import { Book, BookCategory, BOOK_CATEGORIES, ThemeConfig } from '../model/Book';
 import { BookDataService } from '../service/BookDataService';
 import { BookScanService } from '../service/BookScanService';
+import { ReaderConfigService } from '../service/ReaderConfigService';
 
 @Component
 export struct BookShelf {
   @State books: Book[] = [];
   @State isScanning: boolean = false;
   @State currentCategory: BookCategory = '全部';
+  @State themeConfig: ThemeConfig = {
+    backgroundColor: '#FFFFFF',
+    textColor: '#333333',
+    titleColor: '#000000'
+  };
+  @Prop @Watch('onRefreshTheme') refreshTheme: number = 0;
+  @Prop @Watch('onRefreshBooks') refreshBooks: number = 0;
   private bookDataService: BookDataService = BookDataService.getInstance();
   private bookScanService: BookScanService = BookScanService.getInstance();
+  private readerConfigService: ReaderConfigService = ReaderConfigService.getInstance();
   onBookClick?: (book: Book) => void;
-  onSettingsClick?: () => void;
 
   aboutToAppear(): void {
+    this.loadThemeConfig();
     this.loadBooks();
   }
 
+  private onRefreshTheme() {
+    this.loadThemeConfig();
+  }
+
+  private onRefreshBooks() {
+    this.scanBooks();
+  }
+
+  private loadThemeConfig(): void {
+    const config = this.readerConfigService.loadConfig();
+    this.themeConfig = this.readerConfigService.getThemeConfig(config.theme);
+  }
+
+  /**
+   * 根据当前分类加载书籍列表
+   */
   private async loadBooks(): Promise<void> {
     const books: Book[] = this.bookDataService.getBooksByCategory(this.currentCategory);
     this.books = JSON.parse(JSON.stringify(books));
@@ -26,11 +55,17 @@ export struct BookShelf {
     this.loadBooks();
   }
 
+  /**
+   * 扫描本地书籍文件
+   * 调用 BookScanService 扫描所有目录，并将扫描结果添加到书架
+   * 如果测试书籍不存在，则自动创建
+   */
   private async scanBooks(): Promise<void> {
     if (this.isScanning) {
       return;
     }
     this.isScanning = true;
+    await this.bookScanService.createTestBooks();
     const scannedBooks: Book[] = await this.bookScanService.scanAllBooks();
     const len: number = scannedBooks.length;
     for (let i: number = 0; i < len; i++) {
@@ -56,33 +91,16 @@ export struct BookShelf {
     return 180;
   }
 
+  private getCategoryBtnBgColor(): string {
+    if (this.themeConfig.backgroundColor === '#FFFFFF' || this.themeConfig.backgroundColor === '#F5E6D3') {
+      return '#EEEEEE';
+    } else {
+      return '#333333';
+    }
+  }
+
   build() {
     Column() {
-      Row() {
-        Text('书架')
-          .fontSize(24)
-          .fontWeight(FontWeight.Bold)
-          .margin({ left: 20, top: 20 });
-        Blank();
-        Button('设置')
-          .width(60)
-          .height(36)
-          .margin({ right: 10, top: 20 })
-          .onClick(() => {
-            if (this.onSettingsClick) {
-              this.onSettingsClick();
-            }
-          });
-        Button(this.isScanning ? '扫描中...' : '+ 扫描')
-          .width(80)
-          .height(36)
-          .margin({ right: 20, top: 20 })
-          .onClick(() => {
-            this.scanBooks();
-          });
-      }
-      .width('100%');
-
       Row() {
         Scroll() {
           Row() {
@@ -91,8 +109,8 @@ export struct BookShelf {
                 .width(60)
                 .height(32)
                 .margin({ left: 10 })
-                .backgroundColor(this.currentCategory === category ? '#4A90D9' : '#EEEEEE')
-                .fontColor(this.currentCategory === category ? '#FFFFFF' : '#000000')
+                .backgroundColor(this.currentCategory === category ? '#4A90D9' : this.getCategoryBtnBgColor())
+                .fontColor(this.currentCategory === category ? '#FFFFFF' : this.themeConfig.textColor)
                 .onClick(() => {
                   this.onCategoryChange(category);
                 });
@@ -110,10 +128,11 @@ export struct BookShelf {
         Column() {
           Text('暂无书籍')
             .fontSize(18)
-            .fontColor('#999999');
+            .fontColor(this.themeConfig.textColor);
           Text('点击右上角扫描按钮添加书籍')
             .fontSize(14)
-            .fontColor('#CCCCCC')
+            .fontColor(this.themeConfig.textColor)
+            .opacity(0.6)
             .margin({ top: 10 });
         }
         .width('100%')
@@ -133,7 +152,7 @@ export struct BookShelf {
                   .width(this.getBookWidth())
                   .height(this.getBookHeight())
                   .justifyContent(FlexAlign.Center)
-                  .backgroundColor('#4A90D9');
+                  .backgroundColor(item.cover || '#4A90D9');
                   if (item.lastReadTime !== 0) {
                     Text(this.formatProgress(item))
                       .fontSize(10)
@@ -149,6 +168,7 @@ export struct BookShelf {
 
                 Text(item.name)
                   .fontSize(13)
+                  .fontColor(this.themeConfig.textColor)
                   .width(this.getBookWidth())
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })

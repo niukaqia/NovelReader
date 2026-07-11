@@ -1,3 +1,8 @@
+/**
+ * 书籍扫描服务
+ * 负责扫描本地文件系统中的小说文件，支持txt和epub格式
+ * 提供测试书籍自动创建功能，方便开发和测试
+ */
 import fileIo from '@ohos.file.fs';
 import { BusinessError } from '@kit.BasicServicesKit';
 import picker from '@ohos.file.picker';
@@ -7,10 +12,15 @@ import { getGlobalContext } from '../utils/GlobalContext';
 const TAG: string = 'BookScanService';
 const SUPPORTED_EXTENSIONS: string[] = ['.txt', '.epub'];
 
+/**
+ * 测试书籍信息接口
+ * 用于定义内置测试书籍的元数据和内容
+ */
 interface TestBookInfo {
   name: string;
   author: string;
   category: string;
+  coverColor: string;
   content: string;
 }
 
@@ -19,6 +29,7 @@ const TEST_BOOKS: TestBookInfo[] = [
     name: '红楼梦',
     author: '曹雪芹',
     category: '小说',
+    coverColor: '#C41E3A',
     content: `第一回 甄士隐梦幻识通灵 贾雨村风尘怀闺秀
 
 此开卷第一回也。作者自云：因曾历过一番梦幻之后，故将真事隐去，而借通灵之石，撰此《石头记》也。故曰“甄士隐”云云。但书中所记何事何人？自己又云：“今风尘碌碌，一事无成，忽念及当日所有之女子，一一细考较去，觉其行止见识，皆出于我之上。何我堂堂须眉，诚不若彼裙钗哉？实愧则有余，悔又无益之大无可如何之日也！当此日，欲将已往所赖天恩祖德，锦衣纨绔之时，饫甘餍肥之日，背父兄教育之恩，负师友规谈之德，以至今日一技无成，半生潦倒之罪，编述一集，以告天下人：我之罪固不免，然闺阁中本自历历有人，万不可因我之不肖，自护己短，一并使其泯灭也。虽今日之茅椽蓬牖，瓦灶绳床，其晨夕风露，阶柳庭花，亦未有妨于我之襟怀笔墨者。虽我未学，下笔无文，又何妨用假语村言，敷演出一段故事来，以悦人耳目哉？”故曰“贾雨村”云云。
@@ -49,6 +60,7 @@ const TEST_BOOKS: TestBookInfo[] = [
     name: '三体',
     author: '刘慈欣',
     category: '科技',
+    coverColor: '#1E3A8A',
     content: `第一章 科学边界
 
 三十八年后。
@@ -1125,6 +1137,7 @@ const TEST_BOOKS: TestBookInfo[] = [
     name: '明朝那些事儿',
     author: '当年明月',
     category: '历史',
+    coverColor: '#8B4513',
     content: `第一章 童年
 
 公元1328年，朱元璋出生在濠州钟离的一个贫苦农民家庭。他的父亲朱五四是个老实巴交的农民，一辈子面朝黄土背朝天，却始终没能让家人吃饱饭。朱元璋出生时，家里已经有了三个哥哥和两个姐姐，他是最小的那个。
@@ -1249,6 +1262,7 @@ const TEST_BOOKS: TestBookInfo[] = [
     name: '傲慢与偏见',
     author: '简·奥斯汀',
     category: '文学',
+    coverColor: '#4A90D9',
     content: `第一章 贝内特家的烦恼
 
 凡是有钱的单身汉，总想娶位太太，这已经成了一条举世公认的真理。这样的单身汉，每逢新搬到一个地方，四邻八舍虽然完全不了解他的性情如何，见解如何，可是，既然这样的一条真理早已在人们心目中根深蒂固，因此人们总是把他看作自己某一个女儿理所应得的一笔财产。
@@ -1575,6 +1589,11 @@ export class BookScanService {
     return count > 0 ? count : 1;
   }
 
+  /**
+   * 递归扫描目录中的书籍文件
+   * @param dirPath 目录路径
+   * @param books 收集书籍的数组
+   */
   private async scanDirectory(dirPath: string, books: Book[]): Promise<void> {
     try {
       const fileList: string[] = await fileIo.listFile(dirPath);
@@ -1648,6 +1667,11 @@ export class BookScanService {
     }
   }
 
+  /**
+   * 扫描所有目录中的书籍文件
+   * 扫描路径包括：应用私有目录、缓存目录、分布式文件目录、公共媒体目录
+   * @returns 扫描到的书籍数组
+   */
   async scanAllBooks(): Promise<Book[]> {
     const books: Book[] = [];
     const context = getGlobalContext();
@@ -1693,6 +1717,11 @@ export class BookScanService {
     return books;
   }
 
+  /**
+   * 扫描单个文件并创建书籍对象
+   * @param filePath 文件路径
+   * @returns 书籍对象或null（如果不是有效书籍文件）
+   */
   scanSingleFile(filePath: string): Book | null {
     try {
       const stat = fileIo.statSync(filePath);
@@ -1719,9 +1748,11 @@ export class BookScanService {
       }
 
       let category: string = '其他';
+      let coverColor: string | undefined = undefined;
       const testBook = TEST_BOOKS.find(b => b.name === (name || bookName));
       if (testBook) {
         category = testBook.category;
+        coverColor = testBook.coverColor;
       }
 
       const book: Book = {
@@ -1730,6 +1761,7 @@ export class BookScanService {
         author: author,
         filePath: filePath,
         fileType: ext === '.epub' ? 'epub' : 'txt',
+        cover: coverColor,
         totalChapters: totalChapters,
         lastReadChapter: 0,
         lastReadProgress: 0,

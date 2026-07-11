@@ -31,6 +31,14 @@
     {
       "name": "permission_write_documents",
       "value": "写入文档文件"
+    },
+    {
+      "name": "permission_internet",
+      "value": "语音合成需要网络连接"
+    },
+    {
+      "name": "permission_distributed_device",
+      "value": "获取分布式设备信息实现跨设备数据同步"
     }
   ]
 }

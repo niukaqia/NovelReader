@@ -1,8 +1,15 @@
+/**
+ * 书籍数据服务
+ * 负责书籍信息、阅读进度、书签的数据持久化存储
+ * 使用 Preferences API 进行本地存储，支持增删改查操作
+ * 集成分布式数据管理实现跨设备云同步
+ */
 import { preferences } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
 import fileIo from '@ohos.file.fs';
 import { Book, ReadingProgress, Bookmark } from '../model/Book';
 import { getGlobalContext } from '../utils/GlobalContext';
+import { CloudStorageService } from './CloudStorageService';
 
 const TAG: string = 'BookDataService';
 const STORE_NAME: string = 'NovelReaderStore';
@@ -13,6 +20,7 @@ const KEY_BOOKMARK_PREFIX: string = 'bookmark_';
 export class BookDataService {
   private static instance: BookDataService;
   private preferences: preferences.Preferences | null = null;
+  private cloudStorage: CloudStorageService = CloudStorageService.getInstance();
 
   private constructor() {}
 
@@ -21,6 +29,38 @@ export class BookDataService {
       BookDataService.instance = new BookDataService();
     }
     return BookDataService.instance;
+  }
+
+  async syncFromCloud(): Promise<void> {
+    if (!this.cloudStorage.isSyncEnabled()) {
+      return;
+    }
+    try {
+      const syncData = this.cloudStorage.getSyncData();
+      if (syncData.books.length > 0) {
+        for (const book of syncData.books) {
+          this.addBook(book);
+        }
+      }
+      const progressKeys = Object.keys(syncData.progresses);
+      for (let i = 0; i < progressKeys.length; i++) {
+        const bookId = progressKeys[i];
+        const progress = syncData.progresses[bookId];
+        this.saveProgress(progress);
+      }
+      const bookmarkKeys = Object.keys(syncData.bookmarks);
+      for (let i = 0; i < bookmarkKeys.length; i++) {
+        const bookId = bookmarkKeys[i];
+        const bookmarks = syncData.bookmarks[bookId];
+        for (let j = 0; j < bookmarks.length; j++) {
+          this.addBookmark(bookmarks[j]);
+        }
+      }
+      console.log(TAG, 'Sync from cloud completed');
+    } catch (error) {
+      const err = error as BusinessError;
+      console.error(TAG, `syncFromCloud failed: code=${err.code}, message=${err.message}`);
+    }
   }
 
   private initPreferences(): void {
@@ -45,6 +85,10 @@ export class BookDataService {
     }
   }
 
+  /**
+   * 获取所有书籍列表
+   * @returns 书籍数组
+   */
   getAllBooks(): Book[] {
     this.initPreferences();
     if (!this.preferences) {
@@ -65,6 +109,11 @@ export class BookDataService {
     return books.find(book => book.id === bookId);
   }
 
+  /**
+   * 按分类获取书籍列表
+   * @param category 分类名称，'全部'表示获取所有书籍
+   * @returns 对应分类的书籍数组
+   */
   getBooksByCategory(category: string): Book[] {
     const books = this.getAllBooks();
     if (category === '全部') {
@@ -95,6 +144,11 @@ export class BookDataService {
     }
   }
 
+  /**
+   * 添加书籍（避免重复）
+   * @param book 书籍对象
+   * @returns 是否添加成功
+   */
   addBook(book: Book): boolean {
     this.initPreferences();
     if (!this.preferences) {
@@ -102,14 +156,32 @@ export class BookDataService {
     }
     try {
       const books = this.getAllBooks();
-      const existingBook = books.find(b => b.id === book.id);
+      const existingBook = books.find(b => b.name === book.name);
       if (!existingBook) {
         books.push(book);
         this.preferences.putSync(KEY_BOOKS, JSON.stringify(books));
         this.flush();
+        this.cloudStorage.syncBooks(books);
         return true;
+      } else {
+        const index = books.findIndex(b => b.name === book.name);
+        if (index !== -1) {
+          if (book.cover && !existingBook.cover) {
+            books[index].cover = book.cover;
+          }
+          if (book.category && !existingBook.category) {
+            books[index].category = book.category;
+          }
+          if (book.totalChapters > 0 && existingBook.totalChapters === 0) {
+            books[index].totalChapters = book.totalChapters;
+          }
+          this.preferences.putSync(KEY_BOOKS, JSON.stringify(books));
+          this.flush();
+          this.cloudStorage.syncBooks(books);
+          return true;
+        }
+        return false;
       }
-      return false;
     } catch (error) {
       const err = error as BusinessError;
       console.error(TAG, `addBook failed, error code=${err.code}, message=${err.message}`);
@@ -129,6 +201,7 @@ export class BookDataService {
         books[index] = book;
         this.preferences.putSync(KEY_BOOKS, JSON.stringify(books));
         this.flush();
+        this.cloudStorage.syncBooks(books);
         return true;
       }
       return false;
@@ -151,6 +224,7 @@ export class BookDataService {
       this.deleteProgress(bookId);
       this.deleteAllBookmarks(bookId);
       this.flush();
+      this.cloudStorage.syncBooks(filteredBooks);
       return true;
     } catch (error) {
       const err = error as BusinessError;
@@ -159,6 +233,11 @@ export class BookDataService {
     }
   }
 
+  /**
+   * 保存阅读进度
+   * @param progress 阅读进度对象
+   * @returns 是否保存成功
+   */
   saveProgress(progress: ReadingProgress): boolean {
     this.initPreferences();
     if (!this.preferences) {
@@ -168,6 +247,7 @@ export class BookDataService {
       const key = `${KEY_PROGRESS_PREFIX}${progress.bookId}`;
       this.preferences.putSync(key, JSON.stringify(progress));
       this.flush();
+      this.cloudStorage.syncProgress(progress.bookId, progress);
       return true;
     } catch (error) {
       const err = error as BusinessError;
@@ -215,6 +295,11 @@ export class BookDataService {
     }
   }
 
+  /**
+   * 添加书签
+   * @param bookmark 书签对象
+   * @returns 是否添加成功
+   */
   addBookmark(bookmark: Bookmark): boolean {
     this.initPreferences();
     if (!this.preferences) {
@@ -226,6 +311,7 @@ export class BookDataService {
       const key = `${KEY_BOOKMARK_PREFIX}${bookmark.bookId}`;
       this.preferences.putSync(key, JSON.stringify(bookmarks));
       this.flush();
+      this.cloudStorage.syncBookmarks(bookmark.bookId, bookmarks);
       return true;
     } catch (error) {
       const err = error as BusinessError;
@@ -261,6 +347,7 @@ export class BookDataService {
       const key = `${KEY_BOOKMARK_PREFIX}${bookId}`;
       this.preferences.putSync(key, JSON.stringify(filteredBookmarks));
       this.flush();
+      this.cloudStorage.syncBookmarks(bookId, filteredBookmarks);
       return true;
     } catch (error) {
       const err = error as BusinessError;
@@ -308,6 +395,7 @@ export class BookDataService {
       }
       this.preferences.putSync(KEY_BOOKS, '[]');
       this.flush();
+      this.cloudStorage.syncBooks([]);
       return true;
     } catch (error) {
       const err = error as BusinessError;

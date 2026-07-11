@@ -1,3 +1,8 @@
+/**
+ * 阅读页面组件
+ * 负责书籍内容展示、章节切换、翻页动画、书签管理、阅读进度保存
+ * 支持多主题切换、字体大小调整、语音朗读等功能
+ */
 import { Book, Chapter, ReadingProgress, Bookmark, ReaderConfig, ThemeConfig } from '../model/Book';
 import { BookDataService } from '../service/BookDataService';
 import { ReaderConfigService } from '../service/ReaderConfigService';
@@ -39,6 +44,7 @@ export struct ReaderPage {
   @State showSpeechControls: boolean = false;
   @State timerDuration: number = 0;
   @State remainingTime: number = 0;
+  @State isSpeechPlaying: boolean = false;
   private bookDataService: BookDataService = BookDataService.getInstance();
   private readerConfigService: ReaderConfigService = ReaderConfigService.getInstance();
   private speechService: SpeechService = SpeechService.getInstance();
@@ -49,6 +55,9 @@ export struct ReaderPage {
   aboutToAppear(): void {
     this.loadConfig();
     this.loadBook();
+    this.speechService.setOnStop(() => {
+      this.isSpeechPlaying = false;
+    });
   }
 
   private onBookIdChange() {
@@ -76,6 +85,10 @@ export struct ReaderPage {
     this.themeConfig.titleColor = config.titleColor;
   }
 
+  /**
+   * 加载书籍信息和阅读进度
+   * 根据 bookId 获取书籍对象，恢复上次阅读位置
+   */
   private async loadBook(): Promise<void> {
     console.info('ReaderPage', `Loading book with id: ${this.bookId}`);
     const bookItem: Book | undefined = this.bookDataService.getBookById(this.bookId);
@@ -126,6 +139,11 @@ export struct ReaderPage {
     }
   }
 
+  /**
+   * 解析书籍章节
+   * 使用正则表达式匹配章节标题 支持"第X章"、"第X回"格式
+   * 将书籍内容分割为多个章节对象
+   */
   private parseChapters(content: string): Chapter[] {
     const result: Chapter[] = [];
     const lines: string[] = content.split('\n');
@@ -190,6 +208,10 @@ export struct ReaderPage {
     return this.content.substring(start, end);
   }
 
+  /**
+   * 下一页
+   * 如果当前章节还有内容，翻到下一页；否则切换到下一章节
+   */
   private nextPage(): void {
     const totalPages: number = Math.ceil(this.content.length / this.pageSize);
     if (this.currentPage < totalPages - 1) {
@@ -213,6 +235,10 @@ export struct ReaderPage {
     this.saveProgress();
   }
 
+  /**
+   * 保存阅读进度
+   * 将当前章节索引和页码保存到本地存储
+   */
   private saveProgress(): void {
     if (!this.book) {
       return;
@@ -277,11 +303,13 @@ export struct ReaderPage {
     this.saveProgress();
   }
 
-  private toggleSpeech(): void {
-    if (this.speechService.isPlayingStatus()) {
-      this.speechService.stopSpeech();
+  private async toggleSpeech(): Promise<void> {
+    if (this.isSpeechPlaying) {
+      await this.speechService.stopSpeech();
+      this.isSpeechPlaying = false;
     } else {
-      this.speechService.startSpeech(this.getCurrentPageContent());
+      this.isSpeechPlaying = true;
+      await this.speechService.startSpeech(this.getCurrentPageContent());
     }
   }
 
@@ -439,6 +467,11 @@ export struct ReaderPage {
     this.showSettings = false;
   }
 
+  private changePageTurnMode(mode: 'slide' | 'flip' | 'scroll'): void {
+    this.config.pageTurnMode = mode;
+    this.readerConfigService.saveConfig(this.config);
+  }
+
   private getChapterTitle(): string {
     if (this.chapters[this.currentChapter]) {
       return this.chapters[this.currentChapter].title;
@@ -549,7 +582,7 @@ export struct ReaderPage {
                 }
               });
             Blank();
-            Button(this.speechService.isPlayingStatus() ? '停止朗读' : '开始朗读')
+            Button(this.isSpeechPlaying ? '停止朗读' : '开始朗读')
               .width(100)
               .height(36)
               .onClick(() => {
@@ -758,6 +791,37 @@ export struct ReaderPage {
           .justifyContent(FlexAlign.Center)
           .margin({ top: 10 });
 
+          Text('翻页模式')
+            .fontSize(16)
+            .fontWeight(FontWeight.Bold)
+            .margin({ left: 20, top: 20, bottom: 10 });
+          Row() {
+            Button('滑动')
+              .width(60)
+              .height(36)
+              .margin({ left: 10 })
+              .onClick(() => {
+                this.changePageTurnMode('slide');
+              });
+            Button('翻页')
+              .width(60)
+              .height(36)
+              .margin({ left: 10 })
+              .onClick(() => {
+                this.changePageTurnMode('flip');
+              });
+            Button('滚动')
+              .width(60)
+              .height(36)
+              .margin({ left: 10 })
+              .onClick(() => {
+                this.changePageTurnMode('scroll');
+              });
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          .margin({ top: 10 });
+
           Button('关闭')
             .width('80%')
             .height(36)
@@ -883,7 +947,7 @@ export struct ReaderPage {
           .padding({ left: 20, right: 20, top: 20 });
 
           Row() {
-            Button(this.speechService.isPlayingStatus() ? '暂停' : '播放')
+            Button(this.isSpeechPlaying ? '暂停' : '播放')
               .width(80)
               .height(48)
               .margin({ left: 20 })
@@ -894,8 +958,9 @@ export struct ReaderPage {
               .width(80)
               .height(48)
               .margin({ left: 20 })
-              .onClick(() => {
-                this.speechService.stopSpeech();
+              .onClick(async () => {
+                await this.speechService.stopSpeech();
+                this.isSpeechPlaying = false;
               });
           }
           .width('100%')

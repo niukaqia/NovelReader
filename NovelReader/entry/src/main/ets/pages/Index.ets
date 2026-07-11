@@ -5,6 +5,8 @@ import { SettingsPage } from './SettingsPage';
 import { LoginPage } from './LoginPage';
 import { RegisterPage } from './RegisterPage';
 import { AuthService } from '../service/AuthService';
+import { ReaderConfigService } from '../service/ReaderConfigService';
+import { ThemeConfig } from '../model/Book';
 
 @Entry
 @Component
@@ -14,11 +16,24 @@ struct Index {
   @State isLoggedIn: boolean = false;
   @State showLogin: boolean = true;
   @State refreshBooks: number = 0;
+  @State refreshTheme: number = 0;
+  @State themeConfig: ThemeConfig = {
+    backgroundColor: '#FFFFFF',
+    textColor: '#333333',
+    titleColor: '#000000'
+  };
 
   private authService: AuthService = AuthService.getInstance();
+  private readerConfigService: ReaderConfigService = ReaderConfigService.getInstance();
 
   aboutToAppear(): void {
+    this.loadThemeConfig();
     this.forceLogout();
+  }
+
+  private loadThemeConfig(): void {
+    const config = this.readerConfigService.loadConfig();
+    this.themeConfig = this.readerConfigService.getThemeConfig(config.theme);
   }
 
   async forceLogout(): Promise<void> {
@@ -52,54 +67,77 @@ struct Index {
           });
         }
       } else {
-        Navigation() {
-          if (this.currentPage === 'home') {
-            NavDestination() {
-              BookShelf({
-                onBookClick: (book: Book) => {
-                  this.selectedBookId = book.id;
-                  this.currentPage = 'reader';
-                },
-                onSettingsClick: () => {
+        Column() {
+          Row() {
+            Text(this.currentPage === 'home' ? '鸿蒙书阁' : this.currentPage === 'reader' ? '阅读器' : '设置')
+              .fontSize(20)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.themeConfig.titleColor);
+            if (this.currentPage === 'home') {
+              Blank();
+              Button('设置')
+                .width(60)
+                .height(36)
+                .margin({ right: 10 })
+                .onClick(() => {
                   this.currentPage = 'settings';
-                }
-              });
+                });
+              Button('+ 扫描')
+                .width(80)
+                .height(36)
+                .margin({ right: 20 })
+                .onClick(() => {
+                  this.refreshBooks++;
+                });
             }
-            .title('书架');
+          }
+          .width('100%')
+          .height(50)
+          .justifyContent(FlexAlign.Center)
+          .backgroundColor(this.themeConfig.backgroundColor);
+
+          if (this.currentPage === 'home') {
+            BookShelf({
+              refreshTheme: this.refreshTheme,
+              refreshBooks: this.refreshBooks,
+              onBookClick: (book: Book) => {
+                this.selectedBookId = book.id;
+                this.currentPage = 'reader';
+              }
+            })
+            .layoutWeight(1);
           }
 
           if (this.currentPage === 'reader') {
-            NavDestination() {
-              ReaderPage({
-                bookId: this.selectedBookId,
-                onBack: () => {
-                  this.currentPage = 'home';
-                }
-              });
-            }
-            .title('阅读器');
+            ReaderPage({
+              bookId: this.selectedBookId,
+              onBack: () => {
+                this.currentPage = 'home';
+              }
+            });
           }
 
           if (this.currentPage === 'settings') {
-            NavDestination() {
-              SettingsPage({
-                onBack: () => {
-                  this.currentPage = 'home';
-                },
-                onLogout: () => {
-                  this.logout();
-                }
-              });
-            }
-            .title('设置');
+            SettingsPage({
+              onBack: () => {
+                this.refreshTheme++;
+                this.loadThemeConfig();
+                this.currentPage = 'home';
+              },
+              onLogout: () => {
+                this.logout();
+              }
+            });
           }
         }
         .width('100%')
-        .height('100%');
+        .height('100%')
+        .backgroundColor(this.themeConfig.backgroundColor);
       }
     }
     .width('100%')
-    .height('100%');
+    .height('100%')
+    .backgroundColor(this.themeConfig.backgroundColor);
   }
 
   async logout(): Promise<void> {

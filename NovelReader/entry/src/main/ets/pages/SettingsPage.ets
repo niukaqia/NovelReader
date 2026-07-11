@@ -1,7 +1,13 @@
+/**
+ * 设置页面组件
+ * 负责阅读配置管理字体大小、行间距、主题、翻页模式
+ * 提供书籍管理功能 清空书籍、重新扫描
+ */
 import { Book, ReaderConfig, ThemeConfig } from '../model/Book';
 import { ReaderConfigService } from '../service/ReaderConfigService';
 import { BookDataService } from '../service/BookDataService';
 import { BookScanService } from '../service/BookScanService';
+import { CloudStorageService } from '../service/CloudStorageService';
 import promptAction from '@ohos.promptAction';
 
 @Component
@@ -21,15 +27,19 @@ export struct SettingsPage {
     titleColor: '#000000'
   };
   @State bookCount: number = 0;
+  @State cloudSyncEnabled: boolean = false;
+  @State cloudSyncStatus: string = '未连接';
   private readerConfigService: ReaderConfigService = ReaderConfigService.getInstance();
   private bookDataService: BookDataService = BookDataService.getInstance();
   private bookScanService: BookScanService = BookScanService.getInstance();
+  private cloudStorageService: CloudStorageService = CloudStorageService.getInstance();
   onBack?: () => void;
   onLogout?: () => void;
 
   aboutToAppear(): void {
     this.loadConfig();
     this.updateBookCount();
+    this.updateCloudSyncStatus();
   }
 
   private loadConfig(): void {
@@ -175,6 +185,31 @@ export struct SettingsPage {
     this.readerConfigService.resetToDefault();
     this.loadConfig();
     promptAction.showToast({ message: '已恢复默认设置', duration: 2000 });
+  }
+
+  private updateCloudSyncStatus(): void {
+    this.cloudSyncEnabled = this.cloudStorageService.isSyncEnabled();
+    this.cloudSyncStatus = this.cloudStorageService.isSyncConnected() ? '已连接' : '未连接';
+  }
+
+  private async toggleCloudSync(): Promise<void> {
+    if (this.cloudSyncEnabled) {
+      this.cloudStorageService.disableSync();
+      this.cloudSyncEnabled = false;
+      this.cloudSyncStatus = '已关闭';
+      promptAction.showToast({ message: '云同步已关闭', duration: 2000 });
+    } else {
+      const success = await this.cloudStorageService.enableSync();
+      if (success) {
+        this.cloudSyncEnabled = true;
+        this.cloudSyncStatus = '已连接';
+        await this.bookDataService.syncFromCloud();
+        this.updateBookCount();
+        promptAction.showToast({ message: '云同步已开启', duration: 2000 });
+      } else {
+        promptAction.showToast({ message: '云同步开启失败', duration: 2000 });
+      }
+    }
   }
 
   private handleBack(): void {
@@ -474,6 +509,29 @@ export struct SettingsPage {
               .onClick(() => {
                 this.toggleTextToSpeech();
               });
+          }
+          .width('100%')
+          .padding({ top: 10, bottom: 10 });
+
+          Row() {
+            Text('云同步')
+              .fontSize(16)
+              .margin({ left: 20 })
+              .fontColor(this.themeConfig.textColor);
+            Blank();
+            Column() {
+              Button(this.cloudSyncEnabled ? '开' : '关')
+                .width(60)
+                .height(36)
+                .onClick(() => {
+                  this.toggleCloudSync();
+                });
+              Text(this.cloudSyncStatus)
+                .fontSize(12)
+                .fontColor('#999999')
+                .margin({ top: 4 });
+            }
+            .margin({ right: 20 });
           }
           .width('100%')
           .padding({ top: 10, bottom: 10 });
